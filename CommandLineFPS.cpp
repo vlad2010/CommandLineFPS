@@ -65,15 +65,26 @@
 	Last Updated: 27/02/2017
 */
 
+/* 
+    Modified for NCurses by Vlad B. 28.08.2022
+*/
+
 #include <iostream>
 #include <vector>
 #include <utility>
 #include <algorithm>
 #include <chrono>
-using namespace std;
+#include <math.h>
 
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <stdio.h>
-#include <Windows.h>
+
+#include "ncurses.h"
+#include <cstring>
+
+using namespace std;
 
 int nScreenWidth = 120;			// Console Screen Size X (columns)
 int nScreenHeight = 40;			// Console Screen Size Y (rows)
@@ -85,34 +96,59 @@ float fPlayerY = 5.09f;
 float fPlayerA = 0.0f;			// Player Start Rotation
 float fFOV = 3.14159f / 4.0f;	// Field of View
 float fDepth = 16.0f;			// Maximum rendering distance
-float fSpeed = 5.0f;			// Walking Speed
+float fSpeed = 100.0f;			// Walking Speed, was increase from 5.0
+
+void displayLevel(int height, int width, char *screen)
+{
+	char *pos = screen;
+	for(int row = 0; row < height; row++)
+	{
+		std::string line (width, ' ');
+		memcpy((void*)line.data(), pos, width);
+    	mvprintw(row,0, line.c_str());
+		pos = pos + width;
+	}
+
+	refresh();
+}
 
 int main()
 {
+	setlocale(LC_ALL, "");
+
+	initscr();	
+	raw();
+	noecho();
+
+	nodelay(stdscr, TRUE);
+    scrollok(stdscr, TRUE);
+    timeout(0);  // for non blocking getch
+
+	// get terminal y x dimensions 
+ 	getmaxyx(stdscr, nScreenHeight, nScreenWidth);	
 	// Create Screen Buffer
-	wchar_t *screen = new wchar_t[nScreenWidth*nScreenHeight];
-	HANDLE hConsole = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
-	SetConsoleActiveScreenBuffer(hConsole);
-	DWORD dwBytesWritten = 0;
+	char *screen = new char[nScreenWidth*nScreenHeight];
+
+	int dwBytesWritten = 0;
 
 	// Create Map of world space # = wall block, . = space
-	wstring map;
-	map += L"#########.......";
-	map += L"#...............";
-	map += L"#.......########";
-	map += L"#..............#";
-	map += L"#......##......#";
-	map += L"#......##......#";
-	map += L"#..............#";
-	map += L"###............#";
-	map += L"##.............#";
-	map += L"#......####..###";
-	map += L"#......#.......#";
-	map += L"#......#.......#";
-	map += L"#..............#";
-	map += L"#......#########";
-	map += L"#..............#";
-	map += L"################";
+	string map;
+	map += "#########.......";
+	map += "#...............";
+	map += "#.......########";
+	map += "#..............#";
+	map += "#......##......#";
+	map += "#......##......#";
+	map += "#..............#";
+	map += "###............#";
+	map += "##.............#";
+	map += "#......####..###";
+	map += "#......#.......#";
+	map += "#......#.......#";
+	map += "#..............#";
+	map += "#......#########";
+	map += "#..............#";
+	map += "################";
 
 	auto tp1 = chrono::system_clock::now();
 	auto tp2 = chrono::system_clock::now();
@@ -127,38 +163,44 @@ int main()
 		tp1 = tp2;
 		float fElapsedTime = elapsedTime.count();
 
+		int ci = getch();
+		char c = tolower(ci);
 
-		// Handle CCW Rotation
-		if (GetAsyncKeyState((unsigned short)'A') & 0x8000)
-			fPlayerA -= (fSpeed * 0.75f) * fElapsedTime;
-
-		// Handle CW Rotation
-		if (GetAsyncKeyState((unsigned short)'D') & 0x8000)
-			fPlayerA += (fSpeed * 0.75f) * fElapsedTime;
-		
-		// Handle Forwards movement & collision
-		if (GetAsyncKeyState((unsigned short)'W') & 0x8000)
+		switch(c)
 		{
-			fPlayerX += sinf(fPlayerA) * fSpeed * fElapsedTime;;
-			fPlayerY += cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
-			{
-				fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;;
-				fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			}			
-		}
-
-		// Handle backwards movement & collision
-		if (GetAsyncKeyState((unsigned short)'S') & 0x8000)
-		{
-			fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;;
-			fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
-			{
+			case 'a':
+				fPlayerA -= (fSpeed * 0.75f) * fElapsedTime;
+				break;
+			case 'd':
+				fPlayerA += (fSpeed * 0.75f) * fElapsedTime;
+				break;
+			case 'w':
 				fPlayerX += sinf(fPlayerA) * fSpeed * fElapsedTime;;
 				fPlayerY += cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			}
-		}
+				if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
+				{
+					fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;
+					fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;
+				}	
+				break;
+			case 's':
+				fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;;
+				fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;;
+				if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
+				{
+					fPlayerX += sinf(fPlayerA) * fSpeed * fElapsedTime;
+					fPlayerY += cosf(fPlayerA) * fSpeed * fElapsedTime;
+				}
+				break;
+			case 'q':
+				endwin();
+				exit(0);
+				break;
+			default:
+				// for any other keys do nothing and display level
+				break;
+
+		};
 
 		for (int x = 0; x < nScreenWidth; x++)
 		{
@@ -217,7 +259,8 @@ int main()
 							}
 
 						// Sort Pairs from closest to farthest
-						sort(p.begin(), p.end(), [](const pair<float, float> &left, const pair<float, float> &right) {return left.first < right.first; });
+						sort(p.begin(), p.end(), [](const pair<float, float> &left, const pair<float, float> &right) 
+							{return left.first < right.first; });
 						
 						// First two/three are closest (we will never see all four)
 						float fBound = 0.01;
@@ -234,13 +277,25 @@ int main()
 
 			// Shader walls based on distance
 			short nShade = ' ';
-			if (fDistanceToWall <= fDepth / 4.0f)			nShade = 0x2588;	// Very close	
-			else if (fDistanceToWall < fDepth / 3.0f)		nShade = 0x2593;
-			else if (fDistanceToWall < fDepth / 2.0f)		nShade = 0x2592;
-			else if (fDistanceToWall < fDepth)				nShade = 0x2591;
-			else											nShade = ' ';		// Too far away
+			
+			// There is problem with displayeing chars with code > 128 in NCurses
+			// if (fDistanceToWall <= fDepth / 4.0f)			nShade = 0x2588;	// Very close	
+			// else if (fDistanceToWall < fDepth / 3.0f)		nShade = 0x2593;
+			// else if (fDistanceToWall < fDepth / 2.0f)		nShade = 0x2592;
+			// else if (fDistanceToWall < fDepth)				nShade = 0x2591;
+			// else											
+			// 	nShade = ' ';		// Too far away
 
-			if (bBoundary)		nShade = ' '; // Black it out
+			if (fDistanceToWall <= fDepth / 4.0f)			nShade = 'O';	// Very close	
+			else if (fDistanceToWall < fDepth / 3.0f)		nShade = 'W';
+			else if (fDistanceToWall < fDepth / 2.0f)		nShade = 'X';
+			else if (fDistanceToWall < fDepth)				nShade = 'l';
+			else											
+				nShade = ' ';		// Too far away
+
+
+			if (bBoundary)		
+				nShade = ' '; // Black it out
 			
 			for (int y = 0; y < nScreenHeight; y++)
 			{
@@ -264,21 +319,26 @@ int main()
 		}
 
 		// Display Stats
-		swprintf_s(screen, 40, L"X=%3.2f, Y=%3.2f, A=%3.2f FPS=%3.2f ", fPlayerX, fPlayerY, fPlayerA, 1.0f/fElapsedTime);
+		snprintf(screen, 40, "X=%3.2f, Y=%3.2f, A=%3.2f FPS=%3.2f ", fPlayerX, fPlayerY, fPlayerA, 1.0f/fElapsedTime);
 
 		// Display Map
 		for (int nx = 0; nx < nMapWidth; nx++)
+		{
 			for (int ny = 0; ny < nMapWidth; ny++)
 			{
 				screen[(ny+1)*nScreenWidth + nx] = map[ny * nMapWidth + nx];
 			}
+		}
 		screen[((int)fPlayerX+1) * nScreenWidth + (int)fPlayerY] = 'P';
 
 		// Display Frame
 		screen[nScreenWidth * nScreenHeight - 1] = '\0';
-		WriteConsoleOutputCharacter(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
+
+		//write to NCurses buffer 		
+		displayLevel(nScreenHeight, nScreenWidth, screen);
 	}
 
+	endwin();	
 	return 0;
 }
 
